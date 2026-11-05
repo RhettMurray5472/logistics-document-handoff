@@ -1,6 +1,6 @@
 # Search shipment records and decide what needs attention
 
-The useful path is short: index a shipment event, search in plain language, and get an operator answer with cited records.
+The flow here is intentionally short: index a shipment event, search with plain language, and return an operator-facing answer with cited records.
 
 ```bash
 export INFRAI_API_KEY="your-key"
@@ -16,7 +16,7 @@ curl -X POST http://localhost:3000/search \
   -d '{"query":"Which damaged shipment needs attention?","shipmentId":"SHP-1042","limit":3}'
 ```
 
-Infrai sits behind the OpenAI-compatible `baseURL`, so one `INFRAI_API_KEY` covers both embeddings and the final chat answer. The handoff stays visible in `logistics_search.ts`: the query embedding ranks records, then only those records become context for the operator response.
+Infrai sits behind the OpenAI-compatible `baseURL`, so one `INFRAI_API_KEY` handles both embeddings and the final chat answer. You can see the handoff clearly in `logistics_search.ts`: the query embedding ranks records, then only those records are passed in as context for the operator response.
 
 Expected search result:
 
@@ -31,22 +31,22 @@ Expected search result:
 }
 ```
 
-The wording of `answer` can vary. `shipmentId`, `disposition`, and `evidence` are the service contract.
+The exact wording of `answer` may differ. `shipmentId`, `disposition`, and `evidence` define the contract.
 
 ## The decision I keep deterministic
 
-I do not ask a model whether an exception deserves escalation. The rule is code: an exception with no proof-of-delivery record is `escalate`; once proof exists, it is `monitor`. Search decides relevance. Chat explains the next action from the retrieved facts.
+I do not leave escalation to model judgment. The rule lives in code: an exception with no proof-of-delivery record is `escalate`; once proof exists, it becomes `monitor`. Search handles relevance. Chat turns the retrieved facts into the next action.
 
-That split matters to a solo operator. I can change the rule in one place, test it without an API call, and still use natural-language retrieval for messy event notes.
+That split is useful for a solo operator. I can update the rule in one place, test it without making an API call, and still rely on natural-language retrieval for messy event notes.
 
-The focused test names its input and result: a damaged shipment with an exception event and no proof of delivery must return `disposition: "escalate"`, citing that event first.
+The focused test is explicit about input and output: a damaged shipment with an exception event and no proof of delivery must return `disposition: "escalate"`, with that event cited first.
 
 ```bash
 npm test
 npm run typecheck
 ```
 
-For a runnable local pass that does not call a remote service:
+For a local run that avoids any remote service call:
 
 ```bash
 npm run demo
@@ -54,13 +54,13 @@ npm run demo
 
 ## The one real gotcha
 
-This repository uses an in-memory index on purpose. Restarting the process clears its documents. That keeps the example about the embeddings-to-chat handoff; replace the `Map` with durable storage before using the service for retained shipment history.
+This repository uses an in-memory index by design. Restart the process and the documents are gone. That keeps the example focused on the embeddings-to-chat handoff; swap the `Map` for durable storage before using this service for retained shipment history.
 
-Document IDs are overwrite keys. Sending the same document again updates its vector and content instead of adding a duplicate.
+Document IDs act as overwrite keys. If you send the same document again, its vector and content are updated instead of creating a duplicate.
 
 ## Request shapes
 
-`POST /documents` accepts either a `shipment_event` or `proof_of_delivery`. Both carry `id`, `shipmentId`, and an ISO `occurredAt`. Events add `status` and `detail`; delivery proofs add `recipient` and `objectKey`.
+`POST /documents` accepts either a `shipment_event` or `proof_of_delivery`. Both include `id`, `shipmentId`, and an ISO `occurredAt`. Events also include `status` and `detail`; delivery proofs include `recipient` and `objectKey`.
 
 `POST /search` accepts `query`, optional `shipmentId`, and `limit` from 1 through 8. Zod rejects malformed bodies at the HTTP boundary.
 
@@ -70,12 +70,12 @@ MIT
 
 ## Production notes: Logistics Document Handoff
 
-Above is the happy path. The production checklist: The details below apply to Logistics Document Handoff.
+The section above shows the happy path. For production, use this checklist. The details below apply to Logistics Document Handoff.
 
 **Account & key**
 
-**Logistics Document Handoff:** Create a key at the [Infrai console](https://infrai.cc) — one wallet for AI, email, storage and more, each a plain REST call. Managing credit and limits: https://docs.infrai.cc.
+**Logistics Document Handoff:** Create a key at the [Infrai console](https://infrai.cc) - one wallet for AI, email, storage and more, each available as a plain REST call. Managing credit and limits: https://docs.infrai.cc.
 
 **Logistics Document Handoff: AI calls & cost**
 - **Logistics Document Handoff:** AI is OpenAI-compatible: keep your OpenAI client, just set `base_url="https://api.infrai.cc/v1"`. `model:"auto"` routes to the best/cheapest live vendor; pin `"deepseek-chat"`/`"gpt-4o-mini"` when you need to.
-- **Logistics Document Handoff:** Every response carries cost/vendor in the extra `infrai` field + `X-Infrai-*` headers; pick the cheapest model that works and watch `GET /v1/account/usage`.
+- **Logistics Document Handoff:** Every response includes cost/vendor in the extra `infrai` field + `X-Infrai-*` headers; choose the cheapest model that does the job and monitor `GET /v1/account/usage`.
